@@ -16,21 +16,20 @@ app.use(express.json());
 const uri = "mongodb://127.0.0.1:27017";
 const client = new MongoClient(uri);
 
-let usersAuth; // Signup/Login хэрэглэгчид
-let usersCrud; // CRUD demo хэрэглэгчид
-let animes;    // Anime collection
+let usersAuth; 
+let usersCrud; 
+let animes;    
 
 client.connect().then(() => {
   const db = client.db("animeDB");
-  usersAuth = db.collection("usersAuth"); 
-  usersCrud = db.collection("users");     
-  animes = db.collection("animes");       
+  usersAuth = db.collection("usersAuth");
+  usersCrud = db.collection("users");    
+  animes = db.collection("animes");      
   console.log("✅ MongoDB connected");
 });
 
 // ================= AUTH =================
 
-// 🟢 Signup
 app.post("/signup", async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password)
@@ -47,7 +46,6 @@ app.post("/signup", async (req, res) => {
   res.json({ message: "Signup амжилттай! Та одоо login хийж болно." });
 });
 
-// 🟢 Login
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -91,7 +89,6 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// Админ шалгах middleware
 function adminMiddleware(req, res, next) {
   if (req.user.role !== "admin") {
     return res.status(403).json({ message: "Зөвхөн админ эрхтэй" });
@@ -134,11 +131,28 @@ app.delete("/users/:id", authMiddleware, async (req, res) => {
 
 // ================= Anime CRUD (Only Admin) =================
 
+// 🟢 Get all animes
 app.get("/animes", async (req, res) => {
   const allAnimes = await animes.find().toArray();
   res.json(allAnimes);
 });
 
+// 🟢 Get one anime by id
+app.get("/animes/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const anime = await animes.findOne({ _id: new ObjectId(id) });
+    if (!anime) {
+      return res.status(404).json({ message: "Аниме олдсонгүй" });
+    }
+    res.json(anime);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Серверийн алдаа" });
+  }
+});
+
+// 🟢 Add anime
 app.post("/animes", authMiddleware, adminMiddleware, async (req, res) => {
   const { title, desc, year, video, image } = req.body;
   if (!title || !desc) {
@@ -149,6 +163,7 @@ app.post("/animes", authMiddleware, adminMiddleware, async (req, res) => {
   res.json(result);
 });
 
+// 🟢 Update anime
 app.put("/animes/:id", authMiddleware, adminMiddleware, async (req, res) => {
   const id = req.params.id;
   const updatedAnime = req.body;
@@ -159,6 +174,7 @@ app.put("/animes/:id", authMiddleware, adminMiddleware, async (req, res) => {
   res.json(result);
 });
 
+// 🟢 Delete anime
 app.delete("/animes/:id", authMiddleware, adminMiddleware, async (req, res) => {
   const id = req.params.id;
   const result = await animes.deleteOne({ _id: new ObjectId(id) });
