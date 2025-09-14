@@ -1,3 +1,4 @@
+// backend/server.js
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ObjectId } = require("mongodb");
@@ -5,39 +6,40 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const app = express();
-const PORT = 5000;
-const SECRET_KEY = "mysecret"; // JWT нууц түлхүүр
+const PORT = process.env.PORT || 5000;
+const SECRET_KEY = process.env.SECRET_KEY || "mysecret"; // Vercel-д environment variable тохируулж болно
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// MongoDB холболт
-const uri = "mongodb://127.0.0.1:27017";
+// MongoDB Atlas холболт (Vercel-д ажиллана)
+const uri = process.env.MONGODB_URI; // Vercel Environment Variables-д тохируулна
 const client = new MongoClient(uri);
 
-let usersAuth; 
-let usersCrud; 
-let animes;    
+let usersAuth, usersCrud, animes;
 
 client.connect().then(() => {
   const db = client.db("animeDB");
   usersAuth = db.collection("usersAuth");
-  usersCrud = db.collection("users");    
-  animes = db.collection("animes");      
+  usersCrud = db.collection("users");
+  animes = db.collection("animes");
   console.log("✅ MongoDB connected");
 });
 
-// ================= AUTH =================
+// ================= ROOT ROUTE =================
+app.get("/", (req, res) => {
+  res.send("Backend is running!");
+});
 
+// ================= AUTH =================
 app.post("/signup", async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password)
     return res.status(400).json({ message: "Username, Email, Password шаардлагатай" });
 
   const exists = await usersAuth.findOne({ $or: [{ email }, { username }] });
-  if (exists)
-    return res.status(400).json({ message: "Email эсвэл Username бүртгэгдсэн байна" });
+  if (exists) return res.status(400).json({ message: "Email эсвэл Username бүртгэгдсэн байна" });
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const newUser = { username, email, password: hashedPassword, role: "user" };
@@ -74,7 +76,6 @@ app.post("/login", async (req, res) => {
 });
 
 // ================= Middleware =================
-
 function authMiddleware(req, res, next) {
   const authHeader = req.headers["authorization"];
   if (!authHeader) return res.status(401).json({ message: "Token байхгүй байна" });
@@ -90,14 +91,11 @@ function authMiddleware(req, res, next) {
 }
 
 function adminMiddleware(req, res, next) {
-  if (req.user.role !== "admin") {
-    return res.status(403).json({ message: "Зөвхөн админ эрхтэй" });
-  }
+  if (req.user.role !== "admin") return res.status(403).json({ message: "Зөвхөн админ эрхтэй" });
   next();
 }
 
 // ================= Users CRUD =================
-
 app.get("/users", authMiddleware, async (req, res) => {
   const users = await usersCrud.find().toArray();
   res.json(users);
@@ -105,9 +103,9 @@ app.get("/users", authMiddleware, async (req, res) => {
 
 app.post("/users", authMiddleware, async (req, res) => {
   const { name, age, role } = req.body;
-  if (!name || !age || !role) {
+  if (!name || !age || !role)
     return res.status(400).json({ message: "Бүх талбар шаардлагатай" });
-  }
+
   const user = { name, age, role };
   const result = await usersCrud.insertOne(user);
   res.json(result);
@@ -129,22 +127,17 @@ app.delete("/users/:id", authMiddleware, async (req, res) => {
   res.json(result);
 });
 
-// ================= Anime CRUD (Only Admin) =================
-
-// 🟢 Get all animes
+// ================= Anime CRUD =================
 app.get("/animes", async (req, res) => {
   const allAnimes = await animes.find().toArray();
   res.json(allAnimes);
 });
 
-// 🟢 Get one anime by id
 app.get("/animes/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const anime = await animes.findOne({ _id: new ObjectId(id) });
-    if (!anime) {
-      return res.status(404).json({ message: "Аниме олдсонгүй" });
-    }
+    if (!anime) return res.status(404).json({ message: "Аниме олдсонгүй" });
     res.json(anime);
   } catch (err) {
     console.error(err);
@@ -152,29 +145,21 @@ app.get("/animes/:id", async (req, res) => {
   }
 });
 
-// 🟢 Add anime
 app.post("/animes", authMiddleware, adminMiddleware, async (req, res) => {
   const { title, desc, year, video, image } = req.body;
-  if (!title || !desc) {
-    return res.status(400).json({ message: "Title ба Description шаардлагатай" });
-  }
+  if (!title || !desc) return res.status(400).json({ message: "Title ба Description шаардлагатай" });
   const newAnime = { title, desc, year, video, image };
   const result = await animes.insertOne(newAnime);
   res.json(result);
 });
 
-// 🟢 Update anime
 app.put("/animes/:id", authMiddleware, adminMiddleware, async (req, res) => {
   const id = req.params.id;
   const updatedAnime = req.body;
-  const result = await animes.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: updatedAnime }
-  );
+  const result = await animes.updateOne({ _id: new ObjectId(id) }, { $set: updatedAnime });
   res.json(result);
 });
 
-// 🟢 Delete anime
 app.delete("/animes/:id", authMiddleware, adminMiddleware, async (req, res) => {
   const id = req.params.id;
   const result = await animes.deleteOne({ _id: new ObjectId(id) });
@@ -182,6 +167,4 @@ app.delete("/animes/:id", authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // ================= Server start =================
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-);
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
